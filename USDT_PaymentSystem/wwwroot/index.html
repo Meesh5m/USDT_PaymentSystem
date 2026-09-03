@@ -1,0 +1,155 @@
+﻿<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>بوابة دفع USDT (TRC20)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body {
+            font-family: Tahoma, sans-serif;
+            background: #f4f7f6;
+            display: flex;
+            justify-content: center;
+            padding-top: 50px;
+        }
+
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            text-align: center;
+            width: 350px;
+        }
+
+        .status {
+            padding: 8px;
+            border-radius: 6px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            background: #fff3cd;
+            color: #856404;
+        }
+
+            .status.paid {
+                background: #d4edda;
+                color: #155724;
+            }
+
+        #qrcode {
+            margin: 15px auto;
+            display: inline-block;
+        }
+
+        .wallet {
+            font-size: 11px;
+            word-break: break-all;
+            background: #eee;
+            padding: 8px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>دفعة USDT (TRC20)</h2>
+        <div id="status" class="status">في انتظار الدفع...</div>
+
+        <p>المبلغ المطلوب: <strong id="amount">--</strong> USDT</p>
+        <div id="qrcode"></div>
+        <p class="wallet" id="wallet">--</p>
+
+        <div style="margin-top: 15px;">
+            <input type="text" id="txHashInput" placeholder="أدخل هاش المعاملة (TX Hash)" style="width: 90%; padding: 8px; margin-bottom: 8px;">
+            <button onclick="manualVerify()" style="width: 96%; padding: 10px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;">تأكيد الدفع</button>
+        </div>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const invoiceId = urlParams.get('id') || 1;
+        let pollTimer = null;
+
+        async function loadInvoice() {
+            try {
+                const res = await fetch(`/api/Payment/${invoiceId}`);
+                if (!res.ok) {
+                    alert(`لم يتم العثور على الفاتورة رقم ${invoiceId}`);
+                    return;
+                }
+                const data = await res.json();
+
+                document.getElementById('amount').innerText = data.amount;
+                document.getElementById('wallet').innerText = data.walletAddress;
+
+                document.getElementById("qrcode").innerHTML = "";
+                new QRCode(document.getElementById("qrcode"), {
+                    text: data.walletAddress,
+                    width: 160,
+                    height: 160
+                });
+
+                if (data.status === "Paid") {
+                    markAsPaid();
+                } else {
+                    // بدء الفحص التلقائي كل 5 ثوانٍ طالما لم يتم الدفع بعد
+                    startAutoPolling();
+                }
+            } catch (error) {
+                console.error("خطأ في الاتصال بالـ API:", error);
+            }
+        }
+
+        function startAutoPolling() {
+            if (pollTimer) return;
+            pollTimer = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/Payment/${invoiceId}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.status === "Paid") {
+                            markAsPaid();
+                            clearInterval(pollTimer); // إيقاف الفحص بعد الدفع
+                        }
+                    }
+                } catch (err) {
+                    console.error("خطأ أثناء الفحص التلقائي:", err);
+                }
+            }, 5000); // 5000ms = 5 ثوانٍ
+        }
+
+        async function manualVerify() {
+            const hash = document.getElementById('txHashInput').value.trim();
+            if (!hash) return alert("يرجى إدخال Hash المعاملة");
+
+            try {
+                const res = await fetch(`/api/Payment/verify/${invoiceId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(hash)
+                });
+
+                if (res.ok) {
+                    const result = await res.json();
+                    alert(result.message || "تمت عملية التحقق بنجاح!");
+                    markAsPaid();
+                } else {
+                    alert("فشل التحقق: المعاملة غير صحيحة أو لم تتم على البلوكشين بعد.");
+                }
+            } catch (error) {
+                alert("حدث خطأ أثناء الاتصال بالسيرفر");
+            }
+        }
+
+        function markAsPaid() {
+            const statusEl = document.getElementById('status');
+            statusEl.innerText = "تم الدفع بنجاح! ✓";
+            statusEl.className = "status paid";
+            if (pollTimer) clearInterval(pollTimer);
+        }
+
+        loadInvoice();
+    </script>
+</body>
+</html>

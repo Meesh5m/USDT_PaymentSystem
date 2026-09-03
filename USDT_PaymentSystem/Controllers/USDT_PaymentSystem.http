@@ -1,0 +1,12 @@
+POST https://localhost:7067/api/Payment
+Content-Type: application/json
+
+{
+  "amount": 100.50,
+  "walletAddress": "T9yD14Nj9yD14Nj9yD14Nj9yD14Nj9yD14Nj",
+  "status": "Pending"
+}
+
+###
+
+GET https://localhost:7067/api/Payment
